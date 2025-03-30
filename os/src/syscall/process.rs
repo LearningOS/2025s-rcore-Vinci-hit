@@ -41,7 +41,6 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
 use crate::task::read_syscall_count;
 // TODO: implement the syscall
 pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
-    println!("kernel: sys_trace: id = {}", trace_request);
     trace!("kernel: sys_trace");
     match trace_request{
         0 => {
@@ -60,7 +59,6 @@ pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
         }
         2 => {
             let r = read_syscall_count(id);
-            println!("kernel: sys_trace: id = {}, data = {}", id, r);
             r as isize
         },
         _ => {

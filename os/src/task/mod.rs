@@ -47,7 +47,7 @@ pub struct TaskManagerInner {
     current_task: usize,
 
     ///统计系统调用数量
-    syscall_cnt: [usize;1024],
+    syscall_cnt: [[usize;1024]; MAX_APP_NUM],
 }
 
 lazy_static! {
@@ -68,7 +68,7 @@ lazy_static! {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
-                    syscall_cnt: [0;1024]
+                    syscall_cnt: [[0;1024]; MAX_APP_NUM]
                 })
             },
         }
@@ -141,8 +141,8 @@ impl TaskManager {
     }
     fn trace_syscall(&self, syscall_id: usize){
         let mut inner = self.inner.exclusive_access();
-        inner.syscall_cnt[syscall_id] += 1;
-        drop(inner);
+        let current_task = inner.current_task;
+        inner.syscall_cnt[current_task][syscall_id] += 1;
     }
 }
 
@@ -185,5 +185,6 @@ pub fn syscall_trace_once(id:usize){
 ///read_syscall_count
 pub fn read_syscall_count(id:usize) -> usize{
     let inner = TASK_MANAGER.inner.exclusive_access();
-    inner.syscall_cnt[id]
+    let current_task = inner.current_task;
+    inner.syscall_cnt[current_task][id]
 }
