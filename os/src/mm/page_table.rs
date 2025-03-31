@@ -179,3 +179,12 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
     }
     v
 }
+
+/// 将任意类型的用户虚拟地址空间的指针转换为对应的物理地址空间的指针
+pub fn translated_type<T>(token: usize, ptr: *const T) -> Option<&'static mut T> {
+    let page_table = PageTable::from_token(token);
+    let ptr:VirtAddr = (ptr as usize).into(); //把指向某个类型的指针视为虚拟地址
+    let vpn = ptr.floor(); //获取该虚拟地址的页号
+    let ppn = page_table.translate(vpn)?.ppn(); //从页表中查找对应的物理页号
+    Some(ppn.get_mut::<T>())
+}
