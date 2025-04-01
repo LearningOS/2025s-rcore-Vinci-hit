@@ -15,6 +15,7 @@ mod switch;
 mod task;
 
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::{MapPermission, PageTableEntry, VirtAddr, VirtPageNum};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
@@ -47,7 +48,7 @@ struct TaskManagerInner {
     /// id of current `Running` task
     current_task: usize,
     ///统计系统调用数量
-    syscall_cnt: [usize;1024],
+    syscall_cnt: Vec<[usize;1024]>,
 }
 
 lazy_static! {
@@ -60,13 +61,18 @@ lazy_static! {
         for i in 0..num_app {
             tasks.push(TaskControlBlock::new(get_app_data(i), i));
         }
+        let len = tasks.len();
+        let mut vec = Vec::<[usize;1024]>::with_capacity(len);
+        for _ in 0..len{
+            vec.push([0;1024]);
+        }
         TaskManager {
             num_app,
             inner: unsafe {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
-                    syscall_cnt: [0;1024]
+                    syscall_cnt: vec
                 })
             },
         }
@@ -159,7 +165,8 @@ impl TaskManager {
 
     fn trace_syscall(&self, syscall_id: usize){
         let mut inner = self.inner.exclusive_access();
-        inner.syscall_cnt[syscall_id] += 1;
+        let cur = inner.current_task;
+        inner.syscall_cnt[cur][syscall_id] += 1;
         drop(inner);
     }
 }
@@ -219,5 +226,29 @@ pub fn syscall_trace_once(id:usize){
 ///read_syscall_count
 pub fn read_syscall_count(id:usize) -> usize{
     let inner = TASK_MANAGER.inner.exclusive_access();
-    inner.syscall_cnt[id]
+    let cur = inner.current_task;
+    inner.syscall_cnt[cur][id]
+}
+
+///用户程序页表转物理页表
+pub fn user_vpn_to_ppn(vpn:VirtPageNum) -> Option<PageTableEntry>{
+    let inner = TASK_MANAGER.inner.exclusive_access();
+    let task_control_block = &inner.tasks[inner.current_task];
+    task_control_block.memory_set.translate(vpn)
+}
+
+///给当前任务添加一个虚拟页号映射的地址空间
+pub fn map_vpn_to_ppn(start: VirtAddr, end: VirtAddr,permission: MapPermission) -> bool{
+    let mut inner = TASK_MANAGER.inner.exclusive_access();
+    let cur = inner.current_task;
+    let task_control_block = &mut inner.tasks[cur];
+    task_control_block.memory_set.insert_framed_with_check_conflicts(start, end, permission)
+}
+
+///给当前任务删除虚拟页号映射区间
+pub fn unmap_vpn_to_ppn(start: VirtPageNum, end_va: VirtPageNum)->bool{
+    let mut inner = TASK_MANAGER.inner.exclusive_access();
+    let cur = inner.current_task;
+    let task_control_block = &mut inner.tasks[cur];
+    task_control_block.memory_set.ummap_framed(start, end_va)
 }
