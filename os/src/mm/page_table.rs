@@ -70,6 +70,10 @@ impl PageTableEntry {
     pub fn executable(&self) -> bool {
         (self.flags() & PTEFlags::X) != PTEFlags::empty()
     }
+    /// The page pointered by page table entry is user?
+    pub fn user(&self) -> bool {
+        (self.flags() & PTEFlags::U)!= PTEFlags::empty()
+    }
 }
 
 /// page table structure
@@ -180,11 +184,29 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
     v
 }
 
-/// 将任意类型的用户虚拟地址空间的指针转换为对应的物理地址空间的指针
-pub fn translated_type<T>(token: usize, ptr: *const T) -> Option<&'static mut T> {
+///带用户权限检测的translated_byte_buffer
+pub fn translated_byte_buffer_with_user(token: usize, ptr: *const u8, len: usize)-> Vec<&'static mut [u8]>{
     let page_table = PageTable::from_token(token);
-    let ptr:VirtAddr = (ptr as usize).into(); //把指向某个类型的指针视为虚拟地址
-    let vpn = ptr.floor(); //获取该虚拟地址的页号
-    let ppn = page_table.translate(vpn)?.ppn(); //从页表中查找对应的物理页号
-    Some(ppn.get_mut::<T>())
+    let mut start = ptr as usize;
+    let end = start + len;
+    let mut v = Vec::new();
+    while start < end {
+        let start_va = VirtAddr::from(start);
+        let mut vpn = start_va.floor();
+        let pte = page_table.translate(vpn).unwrap();
+        if !pte.user(){
+            return v;
+        }
+        let ppn = pte.ppn();
+        vpn.step();
+        let mut end_va: VirtAddr = vpn.into();
+        end_va = end_va.min(VirtAddr::from(end));
+        if end_va.page_offset() == 0 {
+            v.push(&mut ppn.get_bytes_array()[start_va.page_offset()..]);
+        } else {
+            v.push(&mut ppn.get_bytes_array()[start_va.page_offset()..end_va.page_offset()]);
+        }
+        start = end_va.into();
+    }
+    v
 }
