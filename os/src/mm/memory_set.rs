@@ -1,4 +1,5 @@
 //! Implementation of [`MapArea`] and [`MemorySet`].
+use super::frame_allocator::check_addr_available;
 use super::{frame_alloc, FrameTracker};
 use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
@@ -9,6 +10,7 @@ use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::arch::asm;
+use core::cmp::{max, min};
 use lazy_static::*;
 use riscv::register::satp;
 
@@ -59,6 +61,53 @@ impl MemorySet {
             MapArea::new(start_va, end_va, MapType::Framed, permission),
             None,
         );
+    }
+    ///带检测的映射虚拟内存
+    pub fn insert_framed_with_check_conflicts(
+        &mut self,
+        start_va: VirtAddr,
+        end_va: VirtAddr,
+        permission: MapPermission,
+    )-> bool{
+        if !check_addr_available(end_va.0-start_va.0){
+            trace!("addr too long");
+            return false
+        }
+        if let Some(x) = self
+            .areas
+            .iter()
+            .find(|area| max(&start_va.floor(), &area.vpn_range.get_start()) < min(&end_va.floor(), &area.vpn_range.get_end()))
+        {
+            trace!("fail to map:{:?} ~ {:?}",start_va,end_va);
+            trace!("conflect map:{:?} ~ {:?}",x.vpn_range.get_start(),x.vpn_range.get_end());
+            false
+        } else {
+            self.push(
+                MapArea::new(start_va, end_va, MapType::Framed, permission),
+                None,
+            );
+            trace!("map:{:?} ~ {:?}",start_va,end_va);
+            true
+        }
+    }
+    ///unmap 输入的虚拟页区间到物理页
+    pub fn ummap_framed(&mut self,start_va:VirtPageNum,end_va:VirtPageNum)->bool{
+        let mut start_va = start_va;
+        trace!("ummap:{:?} ~ {:?}",start_va,end_va);
+        while start_va<= end_va{
+            let start = self.areas.iter_mut().find(|area| 
+                start_va >= area.vpn_range.get_start()
+                && start_va <= area.vpn_range.get_end());
+            if let Some(area) = start {
+                let end = min(area.vpn_range.get_end(),  end_va);
+                area.shrink_to2(&mut self.page_table, end);
+            }else{
+                trace!("error");
+                return false
+            }
+            start_va.step();
+        }
+        true
     }
     /// remove a area
     pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
@@ -333,6 +382,7 @@ impl MapArea {
             map_perm: another.map_perm,
         }
     }
+
     pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         let ppn: PhysPageNum;
         match self.map_type {
@@ -370,6 +420,12 @@ impl MapArea {
             self.unmap_one(page_table, vpn)
         }
         self.vpn_range = VPNRange::new(self.vpn_range.get_start(), new_end);
+    }
+    pub fn shrink_to2(&mut self, page_table: &mut PageTable, new_end: VirtPageNum) {
+        for vpn in VPNRange::new(self.vpn_range.get_start(), new_end) {
+            self.unmap_one(page_table, vpn)
+        }
+        self.vpn_range = VPNRange::new(new_end, self.vpn_range.get_end());
     }
     #[allow(unused)]
     pub fn append_to(&mut self, page_table: &mut PageTable, new_end: VirtPageNum) {

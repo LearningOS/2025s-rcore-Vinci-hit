@@ -1,5 +1,6 @@
 //! Implementation of [`FrameAllocator`] which
 //! controls all the frames in the operating system.
+
 use super::{PhysAddr, PhysPageNum};
 use crate::config::MEMORY_END;
 use crate::sync::UPSafeCell;
@@ -41,18 +42,21 @@ trait FrameAllocator {
     fn new() -> Self;
     fn alloc(&mut self) -> Option<PhysPageNum>;
     fn dealloc(&mut self, ppn: PhysPageNum);
+    fn check_size_available(&self,size:usize)-> bool;
 }
 /// an implementation for frame allocator
 pub struct StackFrameAllocator {
     current: usize,
     end: usize,
     recycled: Vec<usize>,
+    available:usize
 }
 
 impl StackFrameAllocator {
     pub fn init(&mut self, l: PhysPageNum, r: PhysPageNum) {
         self.current = l.0;
         self.end = r.0;
+        self.available = self.end - self.current;
         // trace!("last {} Physical Frames.", self.end - self.current);
     }
 }
@@ -62,7 +66,11 @@ impl FrameAllocator for StackFrameAllocator {
             current: 0,
             end: 0,
             recycled: Vec::new(),
+            available:0
         }
+    }
+    fn check_size_available(&self,size:usize)-> bool{
+        size < self.available
     }
     fn alloc(&mut self) -> Option<PhysPageNum> {
         if let Some(ppn) = self.recycled.pop() {
@@ -92,6 +100,7 @@ lazy_static! {
     pub static ref FRAME_ALLOCATOR: UPSafeCell<FrameAllocatorImpl> =
         unsafe { UPSafeCell::new(FrameAllocatorImpl::new()) };
 }
+
 /// initiate the frame allocator using `ekernel` and `MEMORY_END`
 pub fn init_frame_allocator() {
     extern "C" {
@@ -109,6 +118,13 @@ pub fn frame_alloc() -> Option<FrameTracker> {
         .exclusive_access()
         .alloc()
         .map(FrameTracker::new)
+}
+
+///检查地址范围是否超出可用范围
+pub fn check_addr_available(size:usize) -> bool{
+    FRAME_ALLOCATOR
+        .exclusive_access()
+        .check_size_available(size)
 }
 
 /// Deallocate a physical page frame with a given ppn

@@ -3,11 +3,10 @@ use alloc::sync::Arc;
 
 use crate::{
     loader::get_app_data_by_name,
-    mm::{translated_refmut, translated_str},
+    mm::{translated_byte_buffer, translated_refmut, translated_str, MapPermission, VirtAddr},
     task::{
-        add_task, current_task, current_user_token, exit_current_and_run_next,
-        suspend_current_and_run_next,
-    },
+        add_task, current_task, current_user_token, exit_current_and_run_next, map_vpn_to_ppn, suspend_current_and_run_next, unmap_vpn_to_ppn
+    }, timer::get_time_ms,
 };
 
 #[repr(C)]
@@ -105,30 +104,62 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 /// YOUR JOB: get time with second and microsecond
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
-pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
+pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!(
         "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let time = get_time_ms();
+    let sec = (time / 1000).to_ne_bytes();
+    let usec = (time % 1000 * 1000).to_ne_bytes();
+    let mut sec_usec_iter = sec.iter().chain(usec.iter());
+    let u8_ptr = translated_byte_buffer(current_user_token(), ts as *const u8, core::mem::size_of::<TimeVal>());
+    for bytes in u8_ptr{
+        for b in bytes{
+            sec_usec_iter.next().map(|x| b.clone_from(x));
+        }
+    }
+    0
 }
 
 /// YOUR JOB: Implement mmap.
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
+pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
     trace!(
         "kernel:pid[{}] sys_mmap NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    if start%4096 !=0 || prot & !0x7 != 0 || prot & 0x7 == 0{
+        return -1;
+    }
+    let len = len.next_multiple_of(4096);
+    let mut permission = MapPermission::U;
+    if (prot & 1) == 1 {
+        permission |= MapPermission::R;
+    }
+    if (prot & 2) == 2 {
+        permission |= MapPermission::W;
+    }
+    if (prot & 4) == 4 {
+        permission |= MapPermission::X;
+    }
+    if map_vpn_to_ppn(start.into(), (start + len).into(), permission){
+        0
+    }else{
+        -1
+    }
 }
 
-/// YOUR JOB: Implement munmap.
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_munmap NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+// YOUR JOB: Implement munmap.
+pub fn sys_munmap(start: usize, len: usize) -> isize {
+    trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
+    if start%4096 !=0 {
+        return -1;
+    }
+    if unmap_vpn_to_ppn(VirtAddr::from(start).ceil() ,VirtAddr::from(start + len).ceil()){
+        0
+    }else{
+        -1
+    }
 }
 
 /// change data segment size
