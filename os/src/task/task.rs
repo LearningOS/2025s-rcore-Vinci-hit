@@ -9,9 +9,30 @@ use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::cell::RefMut;
+use core::cmp::Ordering;
+
+pub struct Stride(pub usize);
+
+impl PartialOrd for Stride {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        if self.0.abs_diff(other.0) <= HALF_BIG_STRIDE.0{//无溢出
+            self.0.partial_cmp(&other.0)
+        }else{
+            other.0.partial_cmp(&self.0)
+        }
+    }
+}
+
+impl PartialEq for Stride {
+    fn eq(&self, _other: &Self) -> bool {
+        false
+    }
+}
+
 
 ///BIG_STRIDE
-pub const BIG_STRIDE:usize = 0x10000;
+pub const BIG_STRIDE:Stride = Stride(usize::MAX);
+pub const HALF_BIG_STRIDE:Stride = Stride(usize::MAX/2);
 /// Task control block structure
 ///
 /// Directly save the contents that will not change during running
@@ -76,7 +97,7 @@ pub struct TaskControlBlockInner {
     pub pass: usize,
 
     ///stride
-    pub stride: usize,
+    pub stride: Stride,
 
     ///priority
     pub priority: usize,
@@ -131,8 +152,8 @@ impl TaskControlBlock {
                     heap_bottom: user_sp,
                     program_brk: user_sp,
                     priority:16,
-                    pass: BIG_STRIDE/16,
-                    stride: 0,
+                    pass: BIG_STRIDE.0/16,
+                    stride: Stride(0),
                 })
             },
         };
@@ -208,7 +229,7 @@ impl TaskControlBlock {
                     program_brk: parent_inner.program_brk,
                     priority:parent_inner.priority,
                     pass: parent_inner.pass,
-                    stride: parent_inner.stride,
+                    stride: Stride(parent_inner.stride.0),
                 })
             },
         });
@@ -254,8 +275,8 @@ impl TaskControlBlock {
                     heap_bottom: user_sp,
                     program_brk: user_sp,
                     priority:16,
-                    pass: BIG_STRIDE/16,
-                    stride: 0
+                    pass: BIG_STRIDE.0/16,
+                    stride: Stride(0)
                 })
             },
         });

@@ -1,13 +1,32 @@
 //!Implementation of [`TaskManager`]
 use super::TaskControlBlock;
 use crate::sync::UPSafeCell;
-use alloc::collections::VecDeque;
+use alloc::collections::BinaryHeap;
 use alloc::sync::Arc;
 use lazy_static::*;
 ///A array of `TaskControlBlock` that is thread-safe
 pub struct TaskManager {
-    ready_queue: VecDeque<(Arc<TaskControlBlock>,usize)>,
+    ready_queue: BinaryHeap<Arc<TaskControlBlock>>,
 
+}
+impl PartialOrd for TaskControlBlock {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        let inner = self.inner_exclusive_access();
+        inner.stride.partial_cmp(&other.inner_exclusive_access().stride)
+    }
+}
+impl PartialEq for TaskControlBlock  {
+    fn eq(&self, _other: &Self) -> bool {
+        false
+    }
+}
+impl Ord for TaskControlBlock {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
+impl Eq for TaskControlBlock {
+    
 }
 
 /// priority
@@ -15,23 +34,16 @@ impl TaskManager {
     ///Creat an empty TaskManager
     pub fn new() -> Self {
         Self {
-            ready_queue: VecDeque::new(),
+            ready_queue: BinaryHeap::new(),
         }
     }
     /// Add process back to ready queue
     pub fn add(&mut self, task: Arc<TaskControlBlock>) {
-        let inner = task.inner_exclusive_access();
-        let stride = inner.stride;
-        drop(inner);
-        self.ready_queue.push_back((task,stride));
+        self.ready_queue.push(task);
     }
     /// Take a process out of the ready queue
     pub fn fetch(&mut self) -> Option<Arc<TaskControlBlock>> {
-        if let Some(x) = self.ready_queue.iter().enumerate().min_by(|x,y|x.1.1.cmp(&y.1.1)){
-            Some(self.ready_queue.remove(x.0).unwrap().0)
-        }else{
-            None
-        }
+        self.ready_queue.pop()
     }
 }
 

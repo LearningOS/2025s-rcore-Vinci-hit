@@ -207,6 +207,6 @@ pub fn sys_set_priority(prio: isize) -> isize {
     }
     let current_task = current_task().unwrap();
     let mut current_task = current_task.inner_exclusive_access();
-    current_task.pass = BIG_STRIDE/prio as usize;
+    current_task.pass = BIG_STRIDE.0/prio as usize;
     prio
 }
