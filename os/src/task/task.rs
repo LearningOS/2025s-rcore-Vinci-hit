@@ -2,15 +2,38 @@
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
 use crate::config::TRAP_CONTEXT_BASE;
-use crate::fs::{File, Stdin, Stdout};
-use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
+use crate::fs::{open_file, File, OpenFlags, Stdin, Stdout};
+use crate::mm::{translated_str, MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefMut;
+use core::cmp::Ordering;
 
+pub struct Stride(pub usize);
+
+impl PartialOrd for Stride {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        if self.0.abs_diff(other.0) <= HALF_BIG_STRIDE.0{//无溢出
+            self.0.partial_cmp(&other.0)
+        }else{
+            other.0.partial_cmp(&self.0)
+        }
+    }
+}
+
+impl PartialEq for Stride {
+    fn eq(&self, _other: &Self) -> bool {
+        false
+    }
+}
+
+
+///BIG_STRIDE
+pub const BIG_STRIDE:Stride = Stride(usize::MAX);
+pub const HALF_BIG_STRIDE:Stride = Stride(usize::MAX/2);
 /// Task control block structure
 ///
 /// Directly save the contents that will not change during running
@@ -71,6 +94,15 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+
+    ///pass
+    pub pass: usize,
+
+    ///stride
+    pub stride: Stride,
+
+    ///priority
+    pub priority: usize,
 }
 
 impl TaskControlBlockInner {
@@ -135,6 +167,9 @@ impl TaskControlBlock {
                     ],
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    priority:16,
+                    pass: BIG_STRIDE.0/16,
+                    stride: Stride(0),
                 })
             },
         };
@@ -216,6 +251,9 @@ impl TaskControlBlock {
                     fd_table: new_fd_table,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    priority:parent_inner.priority,
+                    pass: parent_inner.pass,
+                    stride: Stride(parent_inner.stride.0),
                 })
             },
         });
@@ -229,6 +267,73 @@ impl TaskControlBlock {
         task_control_block
         // **** release child PCB
         // ---- release parent PCB
+    }
+    ///parent process fork the child process without copy MemorySet
+    pub fn spawn(self: &Arc<Self>,path: *const u8)->Option<Arc<Self>>{
+        let mut parent_inner = self.inner_exclusive_access();
+        let path = translated_str(parent_inner.get_user_token(), path);
+        if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
+            let all_data = app_inode.read_all();
+            let (memory_set, user_sp, entry_point) = MemorySet::from_elf(all_data.as_slice());
+            let trap_cx_ppn = memory_set
+                .translate(VirtAddr::from(TRAP_CONTEXT_BASE).into())
+                .unwrap()
+                .ppn();
+            // alloc a pid and a kernel stack in kernel space
+            let pid_handle = pid_alloc();
+            let kernel_stack = kstack_alloc();
+            let kernel_stack_top = kernel_stack.get_top();
+                    // copy fd table
+            let mut new_fd_table: Vec<Option<Arc<dyn File + Send + Sync>>> = Vec::new();
+            for fd in parent_inner.fd_table.iter() {
+                if let Some(file) = fd {
+                    new_fd_table.push(Some(file.clone()));
+                } else {
+                    new_fd_table.push(None);
+                }
+            }
+            let task_control_block = Arc::new(TaskControlBlock {
+                pid: pid_handle,
+                kernel_stack,
+                inner: unsafe {
+                    UPSafeCell::new(TaskControlBlockInner {
+                        trap_cx_ppn,
+                        base_size: user_sp,
+                        task_cx: TaskContext::goto_trap_return(kernel_stack_top),
+                        task_status: TaskStatus::Ready,
+                        memory_set,
+                        parent: Some(Arc::downgrade(self)),
+                        children: Vec::new(),
+                        exit_code: 0,
+                        fd_table:new_fd_table,
+                        heap_bottom: user_sp,
+                        program_brk: user_sp,
+                        priority:16,
+                        pass: BIG_STRIDE.0/16,
+                        stride: Stride(0)
+                    })
+                },
+            });
+            // add child
+            parent_inner.children.push(task_control_block.clone());
+            // modify kernel_sp in trap_cx
+            // **** access child PCB exclusively
+            // prepare TrapContext in user space
+            let trap_cx = task_control_block.inner_exclusive_access().get_trap_cx();
+            *trap_cx = TrapContext::app_init_context(
+                entry_point,
+                user_sp,
+                KERNEL_SPACE.exclusive_access().token(),
+                kernel_stack_top,
+                trap_handler as usize,
+            );
+            // return
+            return Some(task_control_block)
+            // **** release child PCB
+            // ---- release parent PCB
+        } else {
+            return None;
+        }
     }
 
     /// get pid of process
