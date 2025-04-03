@@ -5,7 +5,7 @@ use crate::{
     loader::get_app_data_by_name,
     mm::{translated_byte_buffer, translated_refmut, translated_str, MapPermission, VirtAddr},
     task::{
-        add_task, current_task, current_user_token, exit_current_and_run_next, map_vpn_to_ppn, suspend_current_and_run_next, unmap_vpn_to_ppn
+        add_task, current_task, current_user_token, exit_current_and_run_next, map_vpn_to_ppn, suspend_current_and_run_next, unmap_vpn_to_ppn, BIG_STRIDE
     }, timer::get_time_ms,
 };
 
@@ -174,19 +174,39 @@ pub fn sys_sbrk(size: i32) -> isize {
 
 /// YOUR JOB: Implement spawn.
 /// HINT: fork + exec =/= spawn
-pub fn sys_spawn(_path: *const u8) -> isize {
+pub fn sys_spawn(path: *const u8) -> isize {
     trace!(
         "kernel:pid[{}] sys_spawn NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let current_task = current_task().unwrap();
+    let new_task = current_task.spawn(path);
+    if let Some(new_task) = new_task{
+        let new_pid = new_task.pid.0;
+        // modify trap context of new_task, because it returns immediately after switching
+        let trap_cx = new_task.inner_exclusive_access().get_trap_cx();
+        // we do not have to move to next instruction since we have done it before
+        // for child process, fork returns 0
+        trap_cx.x[10] = 0;
+        // add new task to scheduler
+        add_task(new_task);
+        new_pid as isize
+    }else{
+        -1
+    }
 }
 
 // YOUR JOB: Set task priority.
-pub fn sys_set_priority(_prio: isize) -> isize {
+pub fn sys_set_priority(prio: isize) -> isize {
     trace!(
         "kernel:pid[{}] sys_set_priority NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    if prio<2{
+        return -1;
+    }
+    let current_task = current_task().unwrap();
+    let mut current_task = current_task.inner_exclusive_access();
+    current_task.pass = BIG_STRIDE/prio as usize;
+    prio
 }

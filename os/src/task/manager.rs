@@ -6,10 +6,11 @@ use alloc::sync::Arc;
 use lazy_static::*;
 ///A array of `TaskControlBlock` that is thread-safe
 pub struct TaskManager {
-    ready_queue: VecDeque<Arc<TaskControlBlock>>,
+    ready_queue: VecDeque<(Arc<TaskControlBlock>,usize)>,
+
 }
 
-/// A simple FIFO scheduler.
+/// priority
 impl TaskManager {
     ///Creat an empty TaskManager
     pub fn new() -> Self {
@@ -19,11 +20,18 @@ impl TaskManager {
     }
     /// Add process back to ready queue
     pub fn add(&mut self, task: Arc<TaskControlBlock>) {
-        self.ready_queue.push_back(task);
+        let inner = task.inner_exclusive_access();
+        let stride = inner.stride;
+        drop(inner);
+        self.ready_queue.push_back((task,stride));
     }
     /// Take a process out of the ready queue
     pub fn fetch(&mut self) -> Option<Arc<TaskControlBlock>> {
-        self.ready_queue.pop_front()
+        if let Some(x) = self.ready_queue.iter().enumerate().min_by(|x,y|x.1.1.cmp(&y.1.1)){
+            Some(self.ready_queue.remove(x.0).unwrap().0)
+        }else{
+            None
+        }
     }
 }
 
