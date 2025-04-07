@@ -4,10 +4,9 @@ use alloc::sync::Arc;
 
 use crate::{
     fs::{open_file, OpenFlags},
-    mm::{translated_byte_buffer, translated_refmut, translated_str, MapPermission},
+    mm::{translated_byte_buffer, translated_refmut, translated_str, MapPermission, VirtAddr},
     task::{
-        add_task, current_task, current_user_token, exit_current_and_run_next,
-        suspend_current_and_run_next, BIG_STRIDE,
+        add_task, current_task, current_user_token, exit_current_and_run_next, map_vpn_to_ppn, suspend_current_and_run_next, unmap_vpn_to_ppn, BIG_STRIDE
     }, timer::get_time_ms,
 };
 

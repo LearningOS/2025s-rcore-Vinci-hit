@@ -23,10 +23,12 @@ mod switch;
 mod task;
 
 use crate::fs::{open_file, OpenFlags};
+use crate::mm::{MapPermission, VirtPageNum};
 use alloc::sync::Arc;
 pub use context::TaskContext;
 use lazy_static::*;
 pub use manager::{fetch_task, TaskManager};
+use riscv::addr::VirtAddr;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
 pub use task::BIG_STRIDE;
@@ -120,4 +122,18 @@ lazy_static! {
 ///Add init process to the manager
 pub fn add_initproc() {
     add_task(INITPROC.clone());
+}
+
+///给当前任务删除虚拟页号映射区间
+pub fn unmap_vpn_to_ppn(start: VirtPageNum, end_va: VirtPageNum)->bool{
+    let task_control_block = current_task().unwrap();
+    let mut inner = task_control_block.inner_exclusive_access();
+    inner.memory_set.ummap_framed(start, end_va)
+}
+
+///给当前任务添加一个虚拟页号映射的地址空间
+pub fn map_vpn_to_ppn(start: VirtAddr, end: VirtAddr,permission: MapPermission) -> bool{
+    let task_control_block = current_task().unwrap();
+    let mut inner = task_control_block.inner_exclusive_access();
+    inner.memory_set.insert_framed_with_check_conflicts(start, end, permission)
 }
