@@ -1,4 +1,5 @@
 //! Implementation of [`MapArea`] and [`MemorySet`].
+use super::frame_allocator::check_addr_available;
 use super::{frame_alloc, FrameTracker};
 use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};

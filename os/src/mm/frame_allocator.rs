@@ -48,13 +48,14 @@ pub struct StackFrameAllocator {
     current: usize,
     end: usize,
     recycled: Vec<usize>,
-    
+    available:usize,
 }
 
 impl StackFrameAllocator {
     pub fn init(&mut self, l: PhysPageNum, r: PhysPageNum) {
         self.current = l.0;
         self.end = r.0;
+        self.available = self.end - self.current;
         // trace!("last {} Physical Frames.", self.end - self.current);
     }
 }
@@ -64,6 +65,7 @@ impl FrameAllocator for StackFrameAllocator {
             current: 0,
             end: 0,
             recycled: Vec::new(),
+            available:0
         }
     }
     fn alloc(&mut self) -> Option<PhysPageNum> {

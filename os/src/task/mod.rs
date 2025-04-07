@@ -23,12 +23,11 @@ mod switch;
 mod task;
 
 use crate::fs::{open_file, OpenFlags};
-use crate::mm::{MapPermission, VirtPageNum};
+use crate::mm::{MapPermission, VirtAddr, VirtPageNum};
 use alloc::sync::Arc;
 pub use context::TaskContext;
 use lazy_static::*;
 pub use manager::{fetch_task, TaskManager};
-use riscv::addr::VirtAddr;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
 pub use task::BIG_STRIDE;
