@@ -41,12 +41,14 @@ trait FrameAllocator {
     fn new() -> Self;
     fn alloc(&mut self) -> Option<PhysPageNum>;
     fn dealloc(&mut self, ppn: PhysPageNum);
+    fn check_size_available(&self,size:usize)-> bool;
 }
 /// an implementation for frame allocator
 pub struct StackFrameAllocator {
     current: usize,
     end: usize,
     recycled: Vec<usize>,
+    
 }
 
 impl StackFrameAllocator {
@@ -73,6 +75,9 @@ impl FrameAllocator for StackFrameAllocator {
             self.current += 1;
             Some((self.current - 1).into())
         }
+    }
+    fn check_size_available(&self,size:usize)-> bool{
+        size < self.available
     }
     fn dealloc(&mut self, ppn: PhysPageNum) {
         let ppn = ppn.0;
