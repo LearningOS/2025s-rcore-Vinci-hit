@@ -115,6 +115,12 @@ pub fn frame_alloc() -> Option<FrameTracker> {
 pub fn frame_dealloc(ppn: PhysPageNum) {
     FRAME_ALLOCATOR.exclusive_access().dealloc(ppn);
 }
+///检查地址范围是否超出可用范围
+pub fn check_addr_available(size:usize) -> bool{
+    FRAME_ALLOCATOR
+        .exclusive_access()
+        .check_size_available(size)
+}
 
 #[allow(unused)]
 /// a simple test for frame allocator
