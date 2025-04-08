@@ -50,3 +50,11 @@ bitflags! {
 pub use inode::{list_apps, open_file, OSInode, OpenFlags};
 pub use pipe::{make_pipe, Pipe};
 pub use stdio::{Stdin, Stdout};
+///linkat
+pub fn linkat(old_name:&str, new_name:&str) -> bool{
+    ROOT_INODE.linkat(old_name, new_name)
+}
+///unlink
+pub fn unlink(name:&str) -> bool{
+    ROOT_INODE.unlink(name)
+}
