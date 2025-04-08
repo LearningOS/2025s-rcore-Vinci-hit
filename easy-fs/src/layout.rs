@@ -2,7 +2,6 @@ use super::{get_block_cache, BlockDevice, BLOCK_SZ};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::{Debug, Formatter, Result};
-
 /// Magic number for sanity check
 const EFS_MAGIC: u32 = 0x3b800001;
 /// The max number of direct inodes
@@ -86,6 +85,7 @@ pub struct DiskInode {
     pub indirect1: u32,
     pub indirect2: u32,
     type_: DiskInodeType,
+    pub recount:u32,
 }
 
 impl DiskInode {
@@ -97,6 +97,19 @@ impl DiskInode {
         self.indirect1 = 0;
         self.indirect2 = 0;
         self.type_ = type_;
+        self.recount = 1;
+    }
+    ///add recount
+    pub fn add_recount(&mut self){
+        self.recount += 1;
+    }
+    pub fn sub_recount(&mut self) -> bool{
+        if self.recount > 1{
+            self.recount -= 1;
+            true
+        }else {
+            false
+        }
     }
     /// Whether this inode is a directory
     pub fn is_dir(&self) -> bool {
@@ -393,6 +406,7 @@ impl DiskInode {
 pub struct DirEntry {
     name: [u8; NAME_LENGTH_LIMIT + 1],
     inode_id: u32,
+
 }
 /// Size of a directory entry
 pub const DIRENT_SZ: usize = 32;
@@ -413,6 +427,10 @@ impl DirEntry {
             name: bytes,
             inode_id,
         }
+    }
+    pub fn clear(&mut self){
+        self.name = [0u8; NAME_LENGTH_LIMIT + 1];
+        self.inode_id = 0;
     }
     /// Serialize into bytes
     pub fn as_bytes(&self) -> &[u8] {
