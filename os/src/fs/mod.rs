@@ -62,5 +62,13 @@ pub fn linkat(old_name:&str, new_name:&str) -> bool{
 }
 ///unlink
 pub fn unlink(name:&str) -> bool{
-    ROOT_INODE.unlink(name)
+    println!("unlink:{}",name);
+    ROOT_INODE.unlink(name);
+    if let Some(_x) = ROOT_INODE.find(name){
+        println!("123");
+    }else{
+        println!("456");
+    }
+    
+    true
 }

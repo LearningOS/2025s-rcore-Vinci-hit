@@ -67,7 +67,7 @@ impl Inode {
         None
     }
     /// find dirent and clear it
-    fn find_dirent_and_clear(&self, name: &str, disk_inode: &DiskInode){
+    fn find_dirent_and_clear(&self, name: &str, disk_inode: &mut DiskInode){
         // assert it is a directory
         assert!(disk_inode.is_dir());
         let file_count = (disk_inode.size as usize) / DIRENT_SZ;
@@ -79,10 +79,12 @@ impl Inode {
             );
             if dirent.name() == name {
                 dirent.clear();
+                disk_inode.write_at(DIRENT_SZ * i, dirent.as_bytes_mut(), &self.block_device,);
                 return
             }
         }
     }
+
     /// Find inode under current inode by name
     pub fn find(&self, name: &str) -> Option<Arc<Inode>> {
         let fs = self.fs.lock();
@@ -198,7 +200,7 @@ impl Inode {
     ///unlink
     pub fn unlink(&self, name:&str) -> bool{
         let mut fs = self.fs.lock();
-        if let Some(some_id) = self.read_disk_inode(|root_inode| {
+        if let Some(some_id) = self.modify_disk_inode(|root_inode| {
             let some_id = self.find_inode_id(name, root_inode);
             self.find_dirent_and_clear(name,root_inode);
             some_id
