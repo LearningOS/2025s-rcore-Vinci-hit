@@ -30,7 +30,12 @@ pub struct Stat {
     /// number of hard links
     pub nlink: u32,
     /// unused pad
-    pad: [u64; 7],
+    pub pad: [u64; 7],
+}
+impl Default for Stat{
+    fn default() -> Self {
+        Self { dev: 0, ino: 0, mode: StatMode::NULL, nlink: 1, pad: [0;7] }
+    }
 }
 
 bitflags! {
@@ -46,5 +51,12 @@ bitflags! {
     }
 }
 
+use inode::ROOT_INODE;
 pub use inode::{list_apps, open_file, OSInode, OpenFlags};
 pub use stdio::{Stdin, Stdout};
+
+pub fn linkat(old_name:&str,new_name:&str){
+    let new_fte = ROOT_INODE.create(new_name).unwrap();
+    let old_fte = ROOT_INODE.find(old_name).unwrap();
+    new_fte.write_at(offset, buf)
+}

@@ -12,6 +12,7 @@ pub struct Inode {
     block_offset: usize,
     fs: Arc<Mutex<EasyFileSystem>>,
     block_device: Arc<dyn BlockDevice>,
+    recount:u8,
 }
 
 impl Inode {
@@ -27,6 +28,7 @@ impl Inode {
             block_offset,
             fs,
             block_device,
+            recount: 1
         }
     }
     /// Call a function over a disk inode to read it

@@ -213,3 +213,4 @@ pub fn sys_set_priority(prio: isize) -> isize {
     current_task.pass = BIG_STRIDE.0/prio as usize;
     prio
 }
+
