@@ -49,6 +49,14 @@ pub struct ProcessControlBlockInner {
     pub semaphore_list: Vec<Option<Arc<Semaphore>>>,
     /// condvar list
     pub condvar_list: Vec<Option<Arc<Condvar>>>,
+    /// available
+    pub available:Vec<usize>,
+    /// need
+    pub need:Vec<(usize,Vec<(usize,usize)>)>,
+    /// need
+    pub allocate:Vec<(usize,Vec<(usize,usize)>)>,
+    /// 
+    pub detect_dead_lock:bool,
 }
 
 impl ProcessControlBlockInner {
@@ -81,6 +89,112 @@ impl ProcessControlBlockInner {
     /// get a task with tid in this process
     pub fn get_task(&self, tid: usize) -> Arc<TaskControlBlock> {
         self.tasks[tid].as_ref().unwrap().clone()
+    }
+    /// 
+    pub fn available(&mut self, some:usize){
+        self.available.push(some);
+    }
+    ///
+    pub fn allocate(&mut self, tid:usize, resourse:usize){
+        self.available[resourse] -= 1;
+        if let Some((_,res)) = self.allocate.iter_mut().find(|(tid_,_)| tid_ == &tid){
+            if let Some((_, res_re)) = res.iter_mut().find(|(res,_)| res == &resourse){
+                *res_re += 1;
+            }else{
+                res.push((resourse,1));
+            }
+        }else{
+            let mut some = Vec::new();
+            some.push((resourse,1));
+            self.allocate.push((tid,some));
+        }
+    }
+    ///
+    pub fn check_dead_lock(&self)->bool{
+        let mut work = self.available.clone();
+        let mut finish: Vec<(usize, bool)> = self.need.iter()
+        .map(|(pid, _)| (*pid, false))
+        .collect();
+        let mut progress_made = true;
+        while progress_made {
+            progress_made = false;
+            for (i,finish_i) in finish.iter_mut(){
+                if *finish_i == false{
+                    if !work.iter().enumerate().any(|(j,count)| {
+                        self.find_need(*i, j) > *count
+                    }){
+                        let some_tid_res = self.allocate.iter()
+                        .find(|(tid,_)| tid == i);
+                        if some_tid_res.is_some(){
+                            for (res_id,count) in &some_tid_res.unwrap().1{
+                                work[*res_id] += *count;
+                            }
+                        }
+                        
+                        *finish_i = true;
+                        progress_made = true;
+                    }
+                }
+            }
+        }
+        finish.iter().any(|(_,x)| !x)
+    }
+    ///
+    pub fn find_need(&self,i:usize,j:usize)->usize{
+        //println!("{:?}",self.need);
+        if let Some((_, res)) = self.need.iter().find(|(tid_,_)| tid_ == &i){
+            if let Some((_,count)) = res.iter().find(|(res,_)| res == &j){
+                *count
+            }else{
+                0
+            }
+        }else{
+            0
+        }
+    }
+    // ///
+    // pub fn find_alloc(&self,i:usize,j:usize)->usize{
+    //     if let Some((_, res)) = self.allocate.iter().find(|(tid_,_)| tid_ == &i){
+    //         if let Some((_,count)) = res.iter().find(|(res,_)| res == &j){
+    //             *count
+    //         }else{
+    //             0
+    //         }
+    //     }else{
+    //         0
+    //     }
+
+    // }
+    ///
+    pub fn need(&mut self, tid:usize, resourse:usize){
+        if let Some((_,res)) = self.need.iter_mut().find(|(tid_,_)| tid_ == &tid){
+            if let Some((_, res_re)) = res.iter_mut().find(|(res,_)| res == &resourse){
+                *res_re += 1;
+            }else{
+                res.push((resourse,1));
+            }
+        }else{
+            let mut some = Vec::new();
+            some.push((resourse,1));
+            self.need.push((tid,some));
+        }
+    }
+    ///
+    pub fn deallocate(&mut self, tid:usize, resourse:usize){
+        self.available[resourse] += 1;
+        if let Some((_,res)) = self.allocate.iter_mut().find(|(tid_,_)| tid_ == &tid){
+            if let Some((_, res_re)) = res.iter_mut().find(|(res,_)| res == &resourse){
+                *res_re -= 1;
+            }
+        }
+    }
+    ///
+    pub fn no_need(&mut self, tid:usize, resourse:usize){
+        if let Some((_,res)) = self.need.iter_mut().find(|(tid_,_)| tid_ == &tid){
+            if let Some((_, res_re)) = res.iter_mut().find(|(res,_)| res == &resourse){
+                *res_re -= 1;
+            }
+        }
     }
 }
 
@@ -119,6 +233,10 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    available:Vec::new(),
+                    need:Vec::new(),
+                    allocate:Vec::new(),
+                    detect_dead_lock:false,
                 })
             },
         });
@@ -245,6 +363,10 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    available:Vec::new(),
+                    need:Vec::new(),
+                    allocate:Vec::new(),
+                    detect_dead_lock:false,
                 })
             },
         });
